@@ -6,16 +6,17 @@ ARG DEBIAN_FRONTEND=noninteractive
 ARG ODIN_VERSION=master
 
 # Install build dependencies and security updates.
-RUN apt-get update 
-    && apt-get upgrade -y 
-    && apt-get install -y --no-install-recommends 
-        ca-certificates 
-        git 
-        gnupg 
-        make 
-        wget 
-        libssl-dev 
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        git \
+        gnupg \
+        make \
+        wget \
+        libssl-dev \
     && rm -rf /var/lib/apt/lists/*
+
 
 # Add the official LLVM repository.
 RUN wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key 
