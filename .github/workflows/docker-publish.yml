@@ -1,23 +1,26 @@
-name: Build and Push Odin Container
+name: Build and Push Odin Docker Image
 
 on:
   schedule:
-    - cron: '0 2 * * *' # Runs every night at 2:00 AM UTC (Nightly build)
+    - cron: "0 2 * * *"
   push:
-    branches: [ "main" ] # Triggers if you update your own repo configuration/Dockerfile
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       odin_version:
-        description: 'Odin version tag or branch to build (e.g., master, dev-2026-06)'
+        description: "Odin branch, tag, or commit to build"
         required: true
-        default: 'master'
+        default: "master"
+        type: string
+
+permissions:
+  contents: read
+  packages: write
 
 jobs:
-  build-and-push:
+  build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
 
     steps:
       - name: Checkout repository
@@ -25,11 +28,14 @@ jobs:
 
       - name: Determine Odin Version
         id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_ODIN_VERSION: ${{ inputs.odin_version }}
         run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "odin_version=${{ github.event.inputs.odin_version }}" >> $GITHUB_OUTPUT
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            printf 'odin_version=%s\n' "$INPUT_ODIN_VERSION" >> "$GITHUB_OUTPUT"
           else
-            echo "odin_version=master" >> $GITHUB_OUTPUT
+            echo "odin_version=master" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Set up QEMU
@@ -41,28 +47,28 @@ jobs:
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKER_HUB_USERNAME }}
-          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Log in to GitHub Container Registry (GHCR)
+      - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract Docker metadata
+      - name: Generate image metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: |
             flushy/odin
-            ghcr.io/${{ github.repository_owner }}/odin
+            ghcr.io/flushwhy/odin
+          flavor: |
+            latest=false
           tags: |
-            # If building master, tag it as 'nightly' and 'latest'
             type=raw,value=nightly,enable=${{ steps.version.outputs.odin_version == 'master' }}
             type=raw,value=latest,enable=${{ steps.version.outputs.odin_version == 'master' }}
-            # If building a specific release tag via workflow_dispatch, use that exact version tag
             type=raw,value=${{ steps.version.outputs.odin_version }},enable=${{ steps.version.outputs.odin_version != 'master' }}
 
       - name: Build and push Docker image
@@ -70,8 +76,12 @@ jobs:
         with:
           context: .
           push: true
-          platforms: linux/amd64,linux/arm64 # Multi-architecture support for Apple Silicon & x86 servers
+          pull: true
+          platforms: linux/amd64,linux/arm64
           build-args: |
             ODIN_VERSION=${{ steps.version.outputs.odin_version }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          no-cache: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && steps.version.outputs.odin_version == 'master') }}
