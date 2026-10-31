@@ -34,7 +34,6 @@ jobs:
           python3 <<'PY'
           import json
           import os
-          import re
           from datetime import datetime, timedelta, timezone
           from urllib.parse import quote
           from urllib.request import Request, urlopen
@@ -64,25 +63,32 @@ jobs:
           token = auth["token"]
           next_url = f"{base}/v2/repositories/{namespace}/{repository}/tags?page_size=100"
           candidates = []
+          protected_count = recent_count = unknown_count = 0
 
           while next_url:
               page = request(next_url, token=token)
               for tag in page.get("results", []):
                   name = tag["name"]
-                  if name in protected or re.fullmatch(r"v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?", name):
+                  if name in protected:
+                      protected_count += 1
                       continue
 
-                  # Keep never-pulled tags until 60 days after their last push.
-                  timestamp = tag.get("tag_last_pulled") or tag.get("tag_last_pushed") or tag.get("last_updated")
+                  # A null pull timestamp means never pulled; age it from its last push.
+                  pulled = tag.get("tag_last_pulled")
+                  timestamp = pulled or tag.get("tag_last_pushed") or tag.get("last_updated")
                   if not timestamp:
+                      unknown_count += 1
                       print(f"SKIP {name}: no usable activity timestamp")
                       continue
                   activity = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
                   if activity < cutoff:
                       candidates.append(name)
+                  else:
+                      recent_count += 1
               next_url = page.get("next")
 
-          print(f"Found {len(candidates)} tag(s) with no pull/push activity in {os.environ['RETENTION_DAYS']} days.")
+          print(f"Scanned tags. Stale: {len(candidates)} | Recent: {recent_count} | Protected aliases: {protected_count} | Unknown timestamps: {unknown_count}")
+          print(f"Retention: {os.environ['RETENTION_DAYS']} days. Version tags are included; only latest/nightly are protected.")
           for name in candidates:
               if dry_run:
                   print(f"DRY RUN: would delete {name}")
