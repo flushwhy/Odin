@@ -35,9 +35,7 @@ jobs:
           import json
           import os
           import re
-          import sys
           from datetime import datetime, timedelta, timezone
-          from urllib.error import HTTPError
           from urllib.parse import quote
           from urllib.request import Request, urlopen
 
@@ -71,11 +69,10 @@ jobs:
               page = request(next_url, token=token)
               for tag in page.get("results", []):
                   name = tag["name"]
-                  if name in protected or re.fullmatch(r"v?\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.-]+)?", name):
+                  if name in protected or re.fullmatch(r"v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?", name):
                       continue
 
-                  # Use last pull when available; otherwise retain never-pulled tags
-                  # until 60 days after their last push/update.
+                  # Keep never-pulled tags until 60 days after their last push.
                   timestamp = tag.get("tag_last_pulled") or tag.get("tag_last_pushed") or tag.get("last_updated")
                   if not timestamp:
                       print(f"SKIP {name}: no usable activity timestamp")
